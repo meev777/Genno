@@ -1,8 +1,8 @@
-"""Tarpit SSH engine: logs every auth attempt, policy decides when to let in."""
+"""Genno SSH engine: logs every auth attempt, policy decides when to let in."""
 import asyncio, uuid, argparse
 from pathlib import Path
 import asyncssh
-from tarpit.telemetry.sink import Sink
+from genno.telemetry.sink import Sink
 
 BANNER = "OpenSSH_8.9p1 Ubuntu-3ubuntu0.6"
 
@@ -14,7 +14,7 @@ class Policy:
     def decide(self, user, pw, attempt_no):
         return (user, pw) in self.allow or attempt_no > self.after
 
-class TarpitServer(asyncssh.SSHServer):
+class GennoServer(asyncssh.SSHServer):
     def __init__(self, sink, policy):
         self.sink, self.policy = sink, policy
         self.sid = uuid.uuid4().hex[:12]
@@ -45,7 +45,7 @@ class TarpitServer(asyncssh.SSHServer):
 
 def make_process_factory(sink, sid_of):
     async def handle(process):
-        srv = process.get_extra_info("tarpit")  # set below
+        srv = process.get_extra_info("genno")  # set below
         sid, peer = srv.sid, srv.peer
         user = process.get_extra_info("username")
         async def run(cmd):
@@ -85,7 +85,7 @@ async def start(host="127.0.0.1", port=2222, logfile="data/events.jsonl",
     servers = {}
 
     def factory():
-        s = TarpitServer(sink, policy)
+        s = GennoServer(sink, policy)
         servers[s.sid] = s
         return s
 
@@ -94,7 +94,7 @@ async def start(host="127.0.0.1", port=2222, logfile="data/events.jsonl",
         conn = process.channel.get_connection()
         srv = next((s for s in servers.values() if s.conn is conn), None)
         orig = process.get_extra_info
-        process.get_extra_info = lambda k, d=None: srv if k == "tarpit" else orig(k, d)
+        process.get_extra_info = lambda k, d=None: srv if k == "genno" else orig(k, d)
         await inner(process)
 
     return await asyncssh.listen(
@@ -110,7 +110,7 @@ def main():
     a = ap.parse_args()
     loop = asyncio.new_event_loop()
     loop.run_until_complete(start(a.host, a.port, a.log))
-    print(f"tarpit ssh listening on {a.host}:{a.port}")
+    print(f"genno ssh listening on {a.host}:{a.port}")
     loop.run_forever()
 
 if __name__ == "__main__":

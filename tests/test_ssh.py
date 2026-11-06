@@ -1,5 +1,5 @@
 import json, asyncio, pytest, asyncssh
-from tarpit.ssh.server import start, Policy
+from genno.ssh.server import start, Policy
 
 async def _client(port, user, pw):
     return await asyncssh.connect("127.0.0.1", port, username=user, password=pw,

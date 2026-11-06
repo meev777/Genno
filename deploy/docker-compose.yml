@@ -1,0 +1,16 @@
+services:
+  genno:
+    build: {context: .., dockerfile: deploy/Dockerfile}
+    ports: ["2222:2222"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [honeynet]
+    volumes: ["../data:/data"]
+    tmpfs: ["/tmp"]
+networks:
+  honeynet:
+    internal: false   # egress enforced by nftables.rules on the host (DOCKER-USER)
