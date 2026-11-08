@@ -1,10 +1,14 @@
-"""Genno SSH engine: logs every auth attempt, policy decides when to let in."""
+"""Genno SSH engine: logs every auth attempt, a policy decides when to let in, then an emulated shell."""
 import asyncio, uuid, argparse
 from pathlib import Path
 import asyncssh
+from genno.shell.profile import load_profile
+from genno.shell.shell import Shell
 from genno.telemetry.sink import Sink
 
 BANNER = "OpenSSH_8.9p1 Ubuntu-3ubuntu0.6"
+IDLE_TIMEOUT = 120
+
 
 class Policy:
     """Accept after `after` failed attempts on one connection, or on an allowlist."""
@@ -14,20 +18,28 @@ class Policy:
     def decide(self, user, pw, attempt_no):
         return (user, pw) in self.allow or attempt_no > self.after
 
+
 class GennoServer(asyncssh.SSHServer):
-    def __init__(self, sink, policy):
-        self.sink, self.policy = sink, policy
+    def __init__(self, sink, policy, profile, idle_timeout=IDLE_TIMEOUT, registry=None):
+        self.sink, self.policy, self.profile = sink, policy, profile
+        self.registry = registry if registry is not None else {}
+        self.idle_timeout = idle_timeout
         self.sid = uuid.uuid4().hex[:12]
         self.attempts = 0
         self.peer = ("?", 0)
 
+    def _emit(self, event_type, **fields):
+        return self.sink.emit(event_type, self.sid, *self.peer, **fields)
+
     def connection_made(self, conn):
         self.conn = conn
         self.peer = conn.get_extra_info("peername")[:2]
-        self.sink.emit("connect", self.sid, *self.peer)
+        self.registry[conn] = self
+        self._emit("connect")
 
     def connection_lost(self, exc):
-        self.sink.emit("disconnect", self.sid, *self.peer, error=str(exc) if exc else None)
+        self.registry.pop(self.conn, None)
+        self._emit("disconnect", error=str(exc) if exc else None)
 
     def begin_auth(self, username):
         return True
@@ -38,80 +50,85 @@ class GennoServer(asyncssh.SSHServer):
     def validate_password(self, username, password):
         self.attempts += 1
         ok = self.policy.decide(username, password, self.attempts)
-        self.sink.emit("auth_attempt", self.sid, *self.peer, username=username,
-                       password=password, success=ok, attempt=self.attempts,
-                       client_version=self.conn.get_extra_info("client_version"))
+        self._emit("auth_attempt", username=username, password=password, success=ok,
+                   attempt=self.attempts, client_version=self.conn.get_extra_info("client_version"))
         return ok
 
-def make_process_factory(sink, sid_of):
-    async def handle(process):
-        srv = process.get_extra_info("genno")  # set below
-        sid, peer = srv.sid, srv.peer
+    async def _handle(self, process):
         user = process.get_extra_info("username")
-        async def run(cmd):
-            sink.emit("command", sid, *peer, username=user, command=cmd)
-            name = cmd.split()[0] if cmd.split() else ""
-            if name in ("exit", "logout"):
-                return True
-            if name:
-                process.stdout.write(f"bash: {name}: command not found\n")
-            return False
+        tty = process.get_terminal_type() is not None
+        sh = Shell(self.profile, user, emit=self._emit, tty=tty)
+
         if process.command is not None:
-            await run(process.command)
-            process.exit(0)
+            self._emit("command", username=user, command=process.command, mode="exec")
+            process.stdout.write(sh.run(process.command))
+            process.exit(sh.last_rc & 0xFF)
             return
-        process.stdout.write("Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n\n")
-        while True:
-            process.stdout.write(f"{user}@srv01:~$ ")
+
+        self._emit("shell_open", username=user, term=process.get_terminal_type())
+        process.stdout.write(self.profile["os_banner"] + "\n\n")
+        while not sh.exited:
+            process.stdout.write(sh.prompt())
             try:
-                line = await process.stdin.readline()
-            except asyncssh.BreakReceived:
+                line = await asyncio.wait_for(process.stdin.readline(), self.idle_timeout)
+            except asyncssh.TerminalSizeChanged:
+                continue
+            except (asyncssh.BreakReceived, asyncssh.SignalReceived):
+                process.stdout.write("^C\n")
+                continue
+            except (asyncio.TimeoutError, asyncssh.Error):
                 break
             if not line:
                 break
-            if await run(line.strip()):
-                break
+            cmd = line.strip()
+            if not cmd:
+                continue
+            self._emit("command", username=user, command=cmd, mode="shell")
+            process.stdout.write(sh.run(cmd))
+        if tty:
+            process.stdout.write("logout\n")
         process.exit(0)
-    return handle
+
 
 async def start(host="127.0.0.1", port=2222, logfile="data/events.jsonl",
-                keyfile="data/host_ed25519", policy=None):
+                keyfile="data/host_ed25519", policy=None, profile="ubuntu-web",
+                idle_timeout=IDLE_TIMEOUT):
     sink = Sink(logfile)
     policy = policy or Policy()
+    prof = load_profile(profile)
     kf = Path(keyfile)
     if not kf.exists():
         kf.parent.mkdir(parents=True, exist_ok=True)
         asyncssh.generate_private_key("ssh-ed25519").write_private_key(str(kf))
-    servers = {}
+    registry = {}   # connection -> GennoServer, so the process handler can find per-connection state
 
-    def factory():
-        s = GennoServer(sink, policy)
-        servers[s.sid] = s
-        return s
-
-    inner = make_process_factory(sink, None)
     async def process_factory(process):
-        conn = process.channel.get_connection()
-        srv = next((s for s in servers.values() if s.conn is conn), None)
-        orig = process.get_extra_info
-        process.get_extra_info = lambda k, d=None: srv if k == "genno" else orig(k, d)
-        await inner(process)
+        srv = registry.get(process.channel.get_connection())
+        if srv is not None:
+            await srv._handle(process)
 
     return await asyncssh.listen(
-        host, port, server_factory=factory, server_host_keys=[str(kf)],
-        process_factory=process_factory, server_version=BANNER,
+        host, port, server_factory=lambda: GennoServer(sink, policy, prof, idle_timeout, registry),
+        process_factory=process_factory, server_host_keys=[str(kf)], server_version=BANNER,
         line_editor=True, encoding="utf-8")
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=2222)
     ap.add_argument("--log", default="data/events.jsonl")
+    ap.add_argument("--key", default="data/host_ed25519")
+    ap.add_argument("--profile", default="ubuntu-web")
+    ap.add_argument("--after", type=int, default=3, help="accept after N failed attempts")
     a = ap.parse_args()
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(start(a.host, a.port, a.log))
-    print(f"genno ssh listening on {a.host}:{a.port}")
-    loop.run_forever()
+    loop.run_until_complete(start(a.host, a.port, a.log, a.key, Policy(after=a.after), a.profile))
+    print(f"genno ssh listening on {a.host}:{a.port}", flush=True)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()
