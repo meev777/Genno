@@ -1,3 +1,4 @@
 asyncssh>=2.14
+pyyaml>=6
 pytest
 pytest-asyncio
