@@ -1,0 +1,127 @@
+hostname: srv01
+os_banner: "Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)"
+uname:
+  sysname: Linux
+  nodename: srv01
+  release: 5.15.0-91-generic
+  version: "#101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023"
+  machine: x86_64
+  os: GNU/Linux
+uptime_days: 23
+nproc: 2
+mem_kb: {total: 2034676, used: 421940, free: 257224, shared: 1124, buff_cache: 1355512, available: 1440300}
+users:
+  root: {uid: 0, gid: 0, home: /root}
+  ubuntu: {uid: 1000, gid: 1000, home: /home/ubuntu}
+  www-data: {uid: 33, gid: 33, home: /var/www}
+processes:
+  # user, pid, %cpu, %mem, vsz, rss, tty, stat, start, time, command
+  - [root, 1, 0.0, 0.5, 167700, 11392, "?", Ss, Oct14, "0:09", "/sbin/init"]
+  - [root, 345, 0.0, 0.8, 52468, 16120, "?", "S<s", Oct14, "0:03", "/lib/systemd/systemd-journald"]
+  - [root, 640, 0.0, 0.1, 6812, 2848, "?", Ss, Oct14, "0:00", "/usr/sbin/cron -f -P"]
+  - [root, 655, 0.0, 0.2, 222404, 4608, "?", Ssl, Oct14, "0:01", "/usr/sbin/rsyslogd -n -iNONE"]
+  - [root, 701, 0.0, 0.1, 55220, 5380, "?", Ss, Oct14, "0:00", "nginx: master process /usr/sbin/nginx -g daemon on; master_process on;"]
+  - [www-data, 702, 0.0, 0.2, 55928, 5084, "?", S, Oct14, "0:12", "nginx: worker process"]
+  - [mysql, 910, 0.4, 9.7, 1795252, 198208, "?", Ssl, Oct14, "41:07", "/usr/sbin/mysqld"]
+  - [root, 812, 0.0, 0.3, 15440, 6808, "?", Ss, Oct14, "0:00", "sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups"]
+dirs:
+  - /bin
+  - /boot
+  - /dev
+  - /etc
+  - /home
+  - /opt
+  - /proc
+  - /root
+  - {path: /root/.ssh, mode: "700"}
+  - /tmp
+  - /usr/bin
+  - /usr/sbin
+  - /var/log
+  - /var/www/html
+  - {path: /home/ubuntu, owner: ubuntu, mode: "750"}
+files:
+  /dev/null: {content: "", mode: "666"}
+  /etc/hostname: {content: "srv01\n"}
+  /etc/issue: {content: "Ubuntu 22.04.3 LTS \\n \\l\n\n"}
+  /etc/os-release:
+    content: |
+      PRETTY_NAME="Ubuntu 22.04.3 LTS"
+      NAME="Ubuntu"
+      VERSION_ID="22.04"
+      VERSION="22.04.3 LTS (Jammy Jellyfish)"
+      VERSION_CODENAME=jammy
+      ID=ubuntu
+      ID_LIKE=debian
+  /etc/passwd:
+    content: |
+      root:x:0:0:root:/root:/bin/bash
+      daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+      bin:x:2:2:bin:/bin:/usr/sbin/nologin
+      sys:x:3:3:sys:/dev:/usr/sbin/nologin
+      sync:x:4:65534:sync:/bin:/bin/sync
+      www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+      messagebus:x:102:105::/nonexistent:/usr/sbin/nologin
+      sshd:x:104:65534::/run/sshd:/usr/sbin/nologin
+      mysql:x:110:115:MySQL Server,,,:/nonexistent:/bin/false
+      ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash
+  /etc/shadow:
+    mode: "640"
+    content: |
+      root:*:19700:0:99999:7:::
+      daemon:*:19700:0:99999:7:::
+      www-data:*:19700:0:99999:7:::
+      ubuntu:!:19700:0:99999:7:::
+  /proc/version: {content: "Linux version 5.15.0-91-generic (buildd@lcy02-amd64-045) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023\n"}
+  /proc/cpuinfo:
+    content: |
+      processor	: 0
+      vendor_id	: GenuineIntel
+      cpu family	: 6
+      model		: 85
+      model name	: Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz
+      cpu MHz		: 2499.998
+      cache size	: 36608 KB
+      cpu cores	: 2
+
+      processor	: 1
+      vendor_id	: GenuineIntel
+      cpu family	: 6
+      model		: 85
+      model name	: Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz
+      cpu MHz		: 2499.998
+      cache size	: 36608 KB
+      cpu cores	: 2
+  /proc/meminfo:
+    content: |
+      MemTotal:        2034676 kB
+      MemFree:          257224 kB
+      MemAvailable:    1440300 kB
+      Buffers:          101236 kB
+      Cached:          1180904 kB
+      SwapTotal:             0 kB
+      SwapFree:              0 kB
+  /root/.bash_history:
+    mode: "600"
+    content: |
+      cd /var/www/html
+      ls -la
+      cat config.php
+      systemctl status nginx
+      mysql -u root -p
+      tail -f /var/log/nginx/error.log
+  /root/deploy.sh:
+    mode: "750"
+    content: |
+      #!/bin/bash
+      cd /var/www/html && git pull origin main
+      systemctl reload nginx
+  /var/www/html/index.html: {content: "<html><body><h1>It works!</h1></body></html>\n"}
+  /var/www/html/config.php:
+    content: |
+      <?php
+      define('DB_HOST', 'localhost');
+      define('DB_USER', 'webapp');
+      define('DB_PASSWORD', 'Wb#2023-prod!');
+      ?>
+  /home/ubuntu/.bash_history: {owner: ubuntu, mode: "600", content: "ls\nsudo apt update\n"}
