@@ -51,3 +51,19 @@ async def test_idle_timeout_closes_session(tmp_path):
         p = await c.create_process(term_type="xterm")
         await asyncio.wait_for(p.wait(), 3)
     srv.close(); await srv.wait_closed()
+
+async def test_unwritable_log_does_not_break_sessions(tmp_path, capsys):
+    log = tmp_path / "logdir"; log.mkdir()          # open(..., "a") on a directory -> OSError, even as root
+    srv = await start(port=0, logfile=str(log), keyfile=str(tmp_path / "k"), policy=Policy(allow=[("a", "b")]))
+    port = srv.sockets[0].getsockname()[1]
+    async with await _client(port, "a", "b") as c:
+        assert (await c.run("whoami")).stdout == "a\n"
+    srv.close(); await srv.wait_closed()
+    assert "telemetry write failed" in capsys.readouterr().err
+
+async def test_filesystem_persists_across_channels_of_one_connection(tmp_path):
+    srv, port, log = await _srv(tmp_path, policy=Policy(allow=[("a", "b")]))
+    async with await _client(port, "a", "b") as c:
+        await c.run("echo marker > /tmp/m")
+        assert (await c.run("cat /tmp/m")).stdout == "marker\n"
+    srv.close(); await srv.wait_closed()

