@@ -13,4 +13,6 @@ services:
     tmpfs: ["/tmp"]
 networks:
   honeynet:
-    internal: false   # egress enforced by nftables.rules on the host (DOCKER-USER)
+    ipam:
+      config:
+        - subnet: 172.30.50.0/24     # pinned so nftables.rules always matches

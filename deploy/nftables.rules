@@ -1,8 +1,8 @@
-# Host-side egress lockdown for the honeynet container subnet (adjust 172.18.0.0/16)
+# Egress lockdown for the Genno container subnet (pinned in docker-compose.yml)
 table inet genno {
   chain forward {
     type filter hook forward priority -10; policy accept;
-    ip saddr 172.18.0.0/16 ct state established,related accept
-    ip saddr 172.18.0.0/16 counter log prefix "genno-egress-drop " drop
+    ip saddr 172.30.50.0/24 ct state established,related accept
+    ip saddr 172.30.50.0/24 counter log prefix "genno-egress-drop " drop
   }
 }
