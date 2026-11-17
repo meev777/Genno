@@ -4,6 +4,7 @@ from pathlib import Path
 import asyncssh
 from genno.shell.profile import load_profile
 from genno.shell.shell import Shell
+from genno.shell.vfs import SessionFS
 from genno.telemetry.sink import Sink
 
 BANNER = "OpenSSH_8.9p1 Ubuntu-3ubuntu0.6"
@@ -26,6 +27,7 @@ class GennoServer(asyncssh.SSHServer):
         self.idle_timeout = idle_timeout
         self.sid = uuid.uuid4().hex[:12]
         self.attempts = 0
+        self._fs = None   # one FS per connection, shared by its channels (like a real host)
         self.peer = ("?", 0)
 
     def _emit(self, event_type, **fields):
@@ -57,7 +59,9 @@ class GennoServer(asyncssh.SSHServer):
     async def _handle(self, process):
         user = process.get_extra_info("username")
         tty = process.get_terminal_type() is not None
-        sh = Shell(self.profile, user, emit=self._emit, tty=tty)
+        if self._fs is None:
+            self._fs = SessionFS(self.profile.base)
+        sh = Shell(self.profile, user, emit=self._emit, tty=tty, fs=self._fs)
 
         if process.command is not None:
             self._emit("command", username=user, command=process.command, mode="exec")

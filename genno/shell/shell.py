@@ -11,18 +11,18 @@ _ASSIGN = re.compile(r"^([A-Za-z_]\w*)=(.*)$", re.S)
 
 
 class Shell:
-    def __init__(self, profile="ubuntu-web", user="root", emit=None, tty=False):
+    def __init__(self, profile="ubuntu-web", user="root", emit=None, tty=False, fs=None):
         self.profile = load_profile(profile) if isinstance(profile, str) else profile
         self.user, self.tty = user, tty
         self.hostname = self.profile["hostname"]
         pu = self.profile["users"].get(user) or {
             "uid": 1001, "gid": 1001, "home": "/root" if user == "root" else f"/home/{user}"}
         self.uid, self.gid, self.home = pu["uid"], pu["gid"], pu["home"]
-        self.fs = SessionFS(self.profile.base)
+        self.fs = fs if fs is not None else SessionFS(self.profile.base)
         if not self.fs.isdir(self.home):
             self.fs.mkdir(self.home, parents=True, owner=user)
         self.cwd = self.oldpwd = self.home
-        self.vars, self.last_rc, self.exited = {}, 0, False
+        self.vars, self.last_rc, self.exited, self._depth = {}, 0, False, 0
         self.emit = emit or (lambda event_type, **fields: None)
 
     def path(self, p):
@@ -124,6 +124,11 @@ class Shell:
         if m and len(argv) == 1:
             self.vars[m.group(1)] = m.group(2)
             return "", "", 0
+        if name.split("/")[-1] in ("sh", "bash", "dash") and (
+                "/" not in name or name.startswith(("/bin/", "/usr/bin/"))):
+            return self._shell_cmd(name.split("/")[-1], argv[1:], stdin)
+        if "/" in name:
+            return self._exec_path(name)
         fn = COMMANDS.get(name)
         if fn is None:
             return "", f"bash: {name}: command not found\n", 127
@@ -131,3 +136,48 @@ class Shell:
             return fn(self, argv[1:], stdin)
         except Exception:   # emulator bugs must never crash the session or leak a traceback
             return "", "", 1
+
+    # --- scripts: run file/-c/stdin lines through the emulator (depth-limited)
+    def _run_script(self, text):
+        if self._depth >= 3:
+            return "", "", 0
+        self._depth += 1
+        out = []
+        try:
+            for line in text.splitlines()[:200]:
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                out.append(self.run(line))
+                if self.exited:          # `exit` ends the script, not the session
+                    self.exited = False
+                    break
+            return "".join(out), "", self.last_rc
+        finally:
+            self._depth -= 1
+
+    def _shell_cmd(self, name, args, stdin):
+        if args and args[0] == "-c":
+            if len(args) < 2:
+                return "", f"{name}: -c: option requires an argument\n", 2
+            return self._run_script(args[1])
+        files = [a for a in args if not a.startswith("-")]
+        if files:
+            n = self.fs.get(self.path(files[0]))
+            if n is None:
+                return "", f"{name}: {files[0]}: No such file or directory\n", 127
+            if n.kind != "f":
+                return "", f"{name}: {files[0]}: Is a directory\n", 126
+            return self._run_script(n.content)
+        return self._run_script(stdin)
+
+    def _exec_path(self, name):
+        p = self.path(name)
+        n = self.fs.get(p)
+        if n is None:
+            return "", f"bash: {name}: No such file or directory\n", 127
+        if n.kind == "d":
+            return "", f"bash: {name}: Is a directory\n", 126
+        if not n.mode & 0o111:
+            return "", f"bash: {name}: Permission denied\n", 126
+        self.emit("exec_attempt", path=p)
+        return self._run_script(n.content)
