@@ -1,4 +1,6 @@
-asyncssh>=2.14
+syncssh>=2.14
 pyyaml>=6
+scikit-learn>=1.4
 pytest
 pytest-asyncio
+
