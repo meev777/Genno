@@ -1,4 +1,35 @@
+# Python virtual environments
+venv/
 .venv/
+env/
+
+# Archives
+zips/
+*.zip
+
+# Data
 data/
+datasets/
+*.csv
+*.json
+
+# Python cache
 __pycache__/
+*.py[cod]
 .pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+
