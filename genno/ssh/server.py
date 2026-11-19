@@ -125,9 +125,12 @@ def main():
     ap.add_argument("--key", default="data/host_ed25519")
     ap.add_argument("--profile", default="ubuntu-web")
     ap.add_argument("--after", type=int, default=3, help="accept after N failed attempts")
+    ap.add_argument("--allow", action="append", default=[], metavar="USER:PASS",
+                    help="credential accepted immediately (repeatable)")
     a = ap.parse_args()
+    allow = [tuple(x.split(":", 1)) for x in a.allow if ":" in x]
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(start(a.host, a.port, a.log, a.key, Policy(after=a.after), a.profile))
+    loop.run_until_complete(start(a.host, a.port, a.log, a.key, Policy(after=a.after, allow=allow), a.profile))
     print(f"genno ssh listening on {a.host}:{a.port}", flush=True)
     try:
         loop.run_forever()
