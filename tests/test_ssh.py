@@ -67,3 +67,22 @@ async def test_filesystem_persists_across_channels_of_one_connection(tmp_path):
         await c.run("echo marker > /tmp/m")
         assert (await c.run("cat /tmp/m")).stdout == "marker\n"
     srv.close(); await srv.wait_closed()
+
+async def test_cli_server_honours_allow_flag(tmp_path):
+    """Drives the real `python -m genno.ssh.server` entrypoint (the path in-process tests skip)."""
+    import socket, sys
+    s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "genno.ssh.server", "--port", str(port), "--log", str(tmp_path / "e.jsonl"),
+        "--key", str(tmp_path / "k"), "--allow", "root:123456", "--allow", "a:b:c",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        assert b"listening" in await asyncio.wait_for(proc.stdout.readline(), 10)
+        async with await _client(port, "root", "123456") as c:
+            assert (await c.run("whoami")).stdout == "root\n"
+        async with await _client(port, "a", "b:c") as c:                 # password may contain ':'
+            assert (await c.run("id")).stdout.startswith("uid=1001(a)")
+        with pytest.raises(asyncssh.PermissionDenied):
+            await _client(port, "root", "wrong")
+    finally:
+        proc.terminate(); await proc.wait()
