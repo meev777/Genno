@@ -1,5 +1,5 @@
 from collections import defaultdict
-from analysis.cluster import cluster_sessions, normalize_word, session_tokens
+from analysis.cluster import cluster_sessions, normalize_word, session_tokens, report
 from tools.simulate import RECON, HUMAN
 
 
@@ -33,6 +33,8 @@ def test_clusters_are_pure_wrt_behaviour_families():
 
 
 def test_degenerate_inputs():
-    assert cluster_sessions([])[1] == []
-    assert cluster_sessions([sess(0, ["id"])])[1] == [-1]
+    assert cluster_sessions([]) == ([], [], None)
+    kept, ids, X = cluster_sessions([sess(0, ["id"])])
+    assert ids == [-1] and X is None
     assert cluster_sessions([{"session_id": "x", "commands": []}] * 3)[0] == []
+    report([], None, out=lambda *a: None); report([sess(0, ["id"])], None, out=lambda *a: None)   # no crash on tiny data
